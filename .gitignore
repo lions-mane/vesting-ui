@@ -26,3 +26,4 @@ yarn-error.log*
 /.idea/inspectionProfiles/Project_Default.xml
 /.idea/vcs.xml
 /.idea/vesting-ui.iml
+/package-lock.json
