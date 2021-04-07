@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from "react";
-import {Dropdown, DropdownButton, Table, Button} from 'react-bootstrap'
+import {Dropdown, Table, Button} from 'react-bootstrap'
 import { Line } from 'react-chartjs-2'
 import moment from 'moment'
-// import Web3 from 'web3';
 import TokenVesting from './TokenVesting.json';
+import * as Icons from "react-icons/io5";
 
 const Loading = () => {
   return (
@@ -24,8 +24,13 @@ const TableRow = ({ title, children }) => {
   )
 }
 
-const VestingUI = ({ address }) => {
+const VestingUI = ({ contractAddress, scheduleID }) => {
+  const Web3 = require('web3');
+  const web3 = new Web3(Web3.givenProvider);
+  const token = new web3.eth.Contract(TokenVesting.abi, contractAddress);
+
   const [loading, setLoading] = useState(true);
+  const [numberOfSchedules, setNumberOfSchedules] = useState(0)
   const [totalAmount, setTotalAmount] = useState(0);
   const [claimedAmount, setClaimedAmount] = useState(0);
   const [startTime, setStartTime] = useState(0);
@@ -35,27 +40,30 @@ const VestingUI = ({ address }) => {
   const [cliffTime, setCliffTime] = useState(0);
   const [cliffTimeDisplay, setCliffTimeDisplay] = useState('');
 
+  const [timeTilCliff, setTimeTilCliff] = useState(0);
+
   useEffect(() => {
     getData()
   });
 
   async function getData() {
-    const Web3 = require('web3');
-    const web3 = new Web3(Web3.givenProvider);
-    const token = new web3.eth.Contract(TokenVesting.abi, '0xC470970Bd42B6cA046AF6d79C70135dCBcfce05a');
+    const accounts = await web3.eth.getAccounts();
 
-    const schedule = await token.methods.schedules('0x32C960AEc22ff061Fa3c0520aa4B83a9D96925f3', 0).call();
+    const schedule = await token.methods.schedules(accounts[0], scheduleID).call();
+    const numSchedules = await token.methods.numberOfSchedules(accounts[0]).call();
+    setNumberOfSchedules(numSchedules);
 
-    setTotalAmount(schedule.totalAmount);
-    setClaimedAmount(schedule.claimedAmount);
+    setTotalAmount(web3.utils.fromWei(schedule.totalAmount));
+    setClaimedAmount(web3.utils.fromWei(schedule.claimedAmount));
 
     setStartTime(schedule.startTime);
     setEndTime(schedule.endTime);
-    setCliffTime(1630000000);
+    setCliffTime(schedule.cliffTime);
 
     setStartTimeDisplay(moment(startTime * 1000).format("D MMMM YYYY, h:mm a"));
     setEndTimeDisplay(moment(endTime * 1000).format("D MMMM YYYY, h:mm a"));
     setCliffTimeDisplay(moment(cliffTime * 1000).format("D MMMM YYYY, h:mm a"));
+    setTimeTilCliff(moment(cliffTime * 1000).diff(moment(startTime * 1000), 'days'));
 
     setLoading(false);
   }
@@ -63,9 +71,11 @@ const VestingUI = ({ address }) => {
   async function claimTokens() {
     const Web3 = require('web3');
     const web3 = new Web3(Web3.givenProvider);
-    const token = new web3.eth.Contract(TokenVesting.abi, '0xC470970Bd42B6cA046AF6d79C70135dCBcfce05a');
+    const token = new web3.eth.Contract(TokenVesting.abi, contractAddress);
 
-    token.methods.claim(0);
+    const accounts = await web3.eth.getAccounts();
+
+    token.methods.claim(scheduleID).send({ from: accounts[0] })
   }
 
   const chartData = () => {
@@ -106,7 +116,7 @@ const VestingUI = ({ address }) => {
   const getPointAtTime = (time) => {
     return {
       x: moment(time * 1000).format('MM/DD/YYYY HH:mm'),
-      y: displayAmount(totalAmount, 2) * (time - startTime) / (endTime - startTime)
+      y: totalAmount * (time - startTime) / (endTime - startTime)
     }
   }
 
@@ -141,27 +151,38 @@ const VestingUI = ({ address }) => {
     }
   }
 
-  const displayAmount = (amount, decimals) => {
-    amount = amount / (10 ** decimals)
-    return Math.round(amount * 10000) / 10000
+  const arrayScheduleID = new Array(Number(numberOfSchedules));
+
+  for(let i = 0; i < arrayScheduleID.length; i++){
+    arrayScheduleID[i] = i;
   }
 
   return (
     <>
       {loading ? <Loading /> : null}
 
-      <DropdownButton title="Select Vesting Contract ">
-        <Dropdown.Item href="/0x90D93f5A390bFDBC401f92e916197ee17470a447">0x90D93f5A390bFDBC401f92e916197ee17470a447</Dropdown.Item>
-        <Dropdown.Item href="/0x9c4a4204b79dd291d6b6571c5be8bbcd0622f050">0x9c4a4204b79dd291d6b6571c5be8bbcd0622f050</Dropdown.Item>
-      </DropdownButton>
+      <div style={{display: 'flex', flexDirection: 'row', justifyContent: 'space-between'}}>
+        <Button variant="outline-secondary" href='/'><Icons.IoHome /></Button>{' '}
+
+        <Dropdown>
+          <Dropdown.Toggle variant="outline-primary">Select Vesting Schedule </Dropdown.Toggle>
+          <Dropdown.Menu>
+            {arrayScheduleID.map(id => <Dropdown.Item href={'/' + contractAddress + '/' + id}>Schedule Number {id + 1}</Dropdown.Item>)}
+          </Dropdown.Menu>
+        </Dropdown>
+      </div>
 
       <Table striped bordered>
         <tbody>
 
-          <TableRow title="Vesting address">
-            <a href={ `https://etherscan.io/address/${address}` } target="_blank" rel="noreferrer">
-              { address }
+          <TableRow title="Contract address">
+            <a href={ `https://etherscan.io/address/${contractAddress}` } target="_blank" rel="noreferrer">
+              { contractAddress }
             </a>
+          </TableRow>
+
+          <TableRow title="Schedule Number">
+            { scheduleID + 1 }
           </TableRow>
 
           <TableRow title="Total amount">
@@ -169,7 +190,7 @@ const VestingUI = ({ address }) => {
           </TableRow>
 
           <TableRow title="Claimed amount">
-            { claimedAmount }
+            { Math.round(claimedAmount) } (rounded to ether)
           </TableRow>
 
           <TableRow title="Start time">
@@ -184,14 +205,20 @@ const VestingUI = ({ address }) => {
             { cliffTimeDisplay }
           </TableRow>
 
+          <TableRow title="Time til cliff">
+            { timeTilCliff } { timeTilCliff <= 1 ? 'day' : 'days' }
+          </TableRow>
+
         </tbody>
       </Table>
 
       <Line data={ chartData } options={ chartOptions() } />
 
-      <Button variant="primary" size="lg" onClick={() => claimTokens()}>
-        Claim Vested Tokens
-      </Button>{' '}
+      <div style={{display: 'flex', justifyContent: 'center', marginTop: '2vh', marginBottom: '4vh'}}>
+        <Button variant="primary" size="lg" onClick={() => claimTokens()}>
+          Claim Vested Tokens
+        </Button>{' '}
+      </div>
 
     </>
   );
